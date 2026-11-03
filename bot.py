@@ -750,4 +750,197 @@ async def kurangmasaaktif(update, context):
             if data["name"] == name:
 
                 if data["expire"] == -1:
-                    return await msg.reply_text("USER SELAMANYA T
+                    return await msg.reply_text("USER SELAMANYA TIDAK BISA DIKURANGI")
+
+                new_expire = data["expire"] - (reduce_days * 86400)
+
+                if new_expire <= now:
+                    del g["premium_users"][uid]
+                    g.get("allowed_users", {}).pop(uid, None)
+                else:
+                    g["premium_users"][uid]["expire"] = new_expire
+
+                groups_col.update_one(
+                    {"chat_id": g["chat_id"]},
+                    {"$set": g}
+                )
+
+                return await msg.reply_text("BERHASIL KURANG MASA AKTIF")
+
+async def delselamanya(update, context):
+    msg = update.message
+
+    # OWNER ONLY
+    if msg.from_user.id != OWNER_ID:
+        return await msg.reply_text("KHUSUS OWNER")
+
+    # PRIVATE ONLY
+    if msg.chat.type != "private":
+        return await msg.reply_text("COMMAND INI HANYA BISA DI PRIVATE BOT")
+
+    if len(context.args) < 1:
+        return await msg.reply_text(
+            "FORMAT:\n/delselamanya nama"
+        )
+
+    name = " ".join(context.args).lower()
+
+    for g in groups_col.find():
+
+        changed = False
+
+        for uid, data in list(g.get("premium_users", {}).items()):
+
+            if (
+                data["name"] == name
+                and data["expire"] == -1
+            ):
+
+                del g["premium_users"][uid]
+
+                if uid in g.get("allowed_users", {}):
+                    del g["allowed_users"][uid]
+
+                changed = True
+
+        if changed:
+            groups_col.update_one(
+                {"chat_id": g["chat_id"]},
+                {"$set": g}
+            )
+
+            return await msg.reply_text(
+                "USER SELAMANYA BERHASIL DIHAPUS ✅"
+            )
+
+    await msg.reply_text(
+        "USER SELAMANYA TIDAK DITEMUKAN"
+                    )
+
+#================= BROADCAST =================
+
+async def bc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+
+    # OWNER ONLY
+    if msg.from_user.id != OWNER_ID:
+        return
+
+    # PRIVATE ONLY
+    if msg.chat.type != "private":
+        return await msg.reply_text(
+            "𝗖𝗢𝗠𝗠𝗔𝗡𝗗 𝗜𝗡𝗜 𝗛𝗔𝗡𝗬𝗔 𝗕𝗜𝗦𝗔 𝗗𝗜 𝗣𝗥𝗜𝗩𝗔𝗧𝗘 𝗕𝗢𝗧"
+        )
+
+    # CEK PESAN
+    if not context.args:
+        return await msg.reply_text(
+            "FORMAT:\n/bc pesan yang ingin dikirim"
+        )
+
+    text = " ".join(context.args)
+
+    berhasil = 0
+    gagal = 0
+
+    me = await context.bot.get_me()
+
+    # KIRIM KE SEMUA GRUP
+    for g in groups_col.find():
+
+        chat_id = g.get("chat_id")
+
+        if not chat_id:
+            continue
+
+        try:
+            chat_id = int(chat_id)
+
+            # Cek status bot
+            member = await context.bot.get_chat_member(
+                chat_id=chat_id,
+                user_id=me.id
+            )
+
+            # HANYA GRUP YANG BOT MENJADI ADMIN
+            if member.status not in ("administrator", "creator"):
+                continue
+
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=text
+            )
+
+            berhasil += 1
+
+        except Exception as e:
+            logging.warning(
+                f"Gagal BC ke grup {chat_id}: {e}"
+            )
+            gagal += 1
+
+    await msg.reply_text(
+        "𝗕𝗥𝗢𝗔𝗗𝗖𝗔𝗦𝗧 𝗦𝗘𝗟𝗘𝗦𝗔𝗜✅\n\n"
+        f"𝗚𝗥𝗨𝗣 𝗕𝗘𝗥𝗛𝗔𝗦𝗜𝗟: {berhasil}\n"
+        f"𝗚𝗥𝗨𝗣 𝗚𝗔𝗚𝗔𝗟: {gagal}"
+    )
+
+#================= MAIN =================
+app = ApplicationBuilder().token(TOKEN).build()
+
+# COMMAND
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("help", help_cmd))
+app.add_handler(CommandHandler("infobot", infobot))
+
+# target
+app.add_handler(CommandHandler("add", add))
+app.add_handler(CommandHandler("delete", delete))
+app.add_handler(CommandHandler("listusn", listusn))
+app.add_handler(CommandHandler("dellist", dellist))
+app.add_handler(CommandHandler("bc", bc))
+
+# user
+app.add_handler(CommandHandler("adduser", adduser))
+app.add_handler(CommandHandler("deluser", deluser))
+app.add_handler(CommandHandler("listuser", listuser))
+
+# text
+app.add_handler(CommandHandler("addtext", addtext))
+app.add_handler(CommandHandler("deltext", deltext))
+app.add_handler(CommandHandler("alltext", alltext))
+
+# filter
+app.add_handler(CommandHandler("filtertext", filtertext))
+app.add_handler(CommandHandler("filterfoto", filterfoto))
+app.add_handler(CommandHandler("deletepesan", deletepesan))
+
+# premium
+app.add_handler(CommandHandler("masaaktif", masaaktif))
+app.add_handler(CommandHandler("cekmasaaktif", cekmasaaktif))
+app.add_handler(CommandHandler("listpremium", listpremium))
+app.add_handler(CommandHandler("tambahmasaaktif", tambahmasaaktif))
+app.add_handler(CommandHandler("kurangmasaaktif", kurangmasaaktif))
+app.add_handler(CommandHandler("delselamanya", delselamanya))
+
+# 🔥 AUTO DELETE PALING BAWAH
+app.add_handler(MessageHandler(filters.ALL, auto_delete), group=1)
+
+print("BOT RUNNING...")
+
+async def error_handler(update, context):
+    import traceback
+    print("ERROR NIH:")
+    traceback.print_exception(
+        type(context.error),
+        context.error,
+        context.error.__traceback__
+    )
+
+app.add_error_handler(error_handler)
+
+print("BOT RUNNING...")
+
+app.run_polling(
+    drop_pending_updates=True
+        )
